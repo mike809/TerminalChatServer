@@ -2,10 +2,11 @@ class ChatRoom
 
 	attr_accessor :name, :users
 
-	def initialize(name, client)
+	def initialize(name, client, hidden = false)
 		@name = name
 		@owner = client
 		@users = Set.new [client]
+		@hidden = hidden
 	end
 
 	def add_user(user)
@@ -17,6 +18,22 @@ class ChatRoom
 			next if user == client
 			user.puts "#{client.username}: #{msg}"
 		end
+	end
+
+	def hidden?
+		@hidden
+	end
+
+	def join(client, chatrooms, arg)
+			client.leave_room if client.chatroom
+
+			client.chatroom = chatrooms[arg]
+			chatrooms[arg].users << client
+
+			client.puts "entering room: #{arg}", false
+			chatrooms[arg].show_users(client)
+
+			puts "User #{client.username} joining room #{arg}"
 	end
 
 	def delete(client)

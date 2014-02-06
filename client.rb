@@ -9,12 +9,14 @@ class Client
 	end
 
 	def puts(str, eom = true)
-		@client.puts "<= #{str.strip}"
-		@client.print "=>" if eom
+		@client.puts "\r<= #{str.strip}"
+		@client.print "=>"# if eom
 	end
 
 	def gets
-		@client.gets.strip
+		input = @client.gets.strip
+		@client.print "=>"
+		input
 	end
 
 	def disconnect

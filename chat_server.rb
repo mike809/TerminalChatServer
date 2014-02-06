@@ -6,7 +6,7 @@ class Server
 	attr_accessor :clients, :chatrooms, :usernames, :room_names
 
 	def initialize
-		@clients = []
+		@clients = {}
 		@chatrooms = {}
 		@usernames = Set.new
 		@room_names = Set.new
@@ -14,7 +14,6 @@ class Server
 
 	def start 
 		server = TCPServer.new 2000
-		clients = []
 		puts "Server Running on Port 2000"
 
 		loop do
@@ -22,7 +21,7 @@ class Server
 		  Thread.start(server.accept) do |user|
 		  	puts "New user just connected."
 		    client = Client.new(user)
-		    client.puts help.join("\n")
+		    client.puts "Type /help for help"
 		    client.puts "Welcome to the chat server\nLogin name?"
 		    
 		    loop do
@@ -34,6 +33,7 @@ class Server
 		    	unless usernames.include?(name)
 		    		client.username = name
 		    		usernames << name
+		    		clients[name] = client
 		    		client.puts "Welcome #{client.username}!"
 		    		puts "#{client.username} logged in."
 		    		break
@@ -51,83 +51,91 @@ class Server
 			_input = client.gets
 			
 			if _input =~ /\/[a-zA-Z]+/
-				input = _input.split(' ')
-
-				if input.length == 2
-					command, arg = *input
-				else
-					command = input[0]
-					arg = ""
-				end
+				command, arg = self.parse_input(_input)
 
 				case command
-					when '/new'
+					when '/new',   '/n'
 						self.add_chatroom(client, arg)			
-
-					when '/del'
+					when '/del',   '/d'
 						chatrooms[arg].delete(client)
 						chatrooms.delete(arg)
-
-					when '/users'
-						if client.chatroom
-							client.chatrooms.show_users
-						else
-							client.puts "You must be in a room the see their users."
-						end
-
-					when '/help'
+					when '/users', '/u'
+						self.display_users client
+					when '/help',  '/h'
 						client.puts help.join("\n")
-
-					when '/leave'
+					when '/leave', '/l'
 						client.leave_room
-
-					when '/rooms'
+					when '/rooms', '/r'
 						self.show_chatrooms client
-
-					when '/quit'
-						usernames.delete(client.username)
-				    client.disconnect
+					when '/quit',  '/q'
+						self.quit client
 				    break
-				    
-					when '/join'
-						self.join(client, arg)
-				
+				  when '/chat',  '/c'
+				  	self.private_chat(client, arg)
+					when '/join',  '/j'
+						self.join_chatroom(client, arg)
 					else
-						if client.chatroom
-							client.chatroom.broadcast(input.join(' ') ,client)
-						else
-							client.puts "Join a room to send message."
-						end
+						self.send_message client, _input
 					end
 			else
-				if client.chatroom
-					client.chatroom.broadcast(_input, client)
-				else
-					client.puts "Join a room to send message."
-				end
+				self.send_message(client, _input)
 			end
 		end
 	end
 
-	def join(client, arg)
+	def parse_input(_input)
+		input = _input.split(' ')
+		if input.length == 2
+			return *input
+		end
+		input << ''
+	end
+
+	def send_message(client, input)
+		if client.chatroom
+			client.chatroom.broadcast(input, client)
+		else
+			client.puts "Join a room to send message."
+		end
+	end
+
+	def display_users(client)
+		if client.chatroom
+			client.chatroom.show_users(client)
+		else
+			client.puts "You must be in a room the see their users."
+		end
+	end
+
+	def quit(client)
+		client.leave_room if client.chatroom
+		usernames.delete(client.username)
+    client.disconnect
+	end
+	
+	def private_chat(client, arg)
+		client.leave_room
+  	other_user = clients[arg]
+  	self.add_chatroom(
+  		client, 
+  		"Private chat: #{client.username} and #{other_user.username}",
+  		true
+  	)
+  	self.join(other_user, client.chatroom.name)
+	end
+
+	def join_chatroom(client, arg)
 		if @chatrooms.include?(arg)
-
-			client.chatroom = @chatrooms[arg]
-			@chatrooms[arg].users << client
-
-			client.puts "entering room: #{arg}", false
-			@chatrooms[arg].show_users(client)
-
-			puts "User #{client.username} joining room #{arg}"
+			@chatrooms[arg].join(client, @chatrooms, arg)
 		else
 			puts "User #{client.username} tryed to join room #{arg}"
 			client.puts "Room #{arg} does not currently exist."
 		end
 	end
 
-	def add_chatroom(client, name)
+	def add_chatroom(client, name, hidden = false)
 		unless @chatrooms.include?(name)
-			@chatrooms[name] = ChatRoom.new(name, client)
+			@chatrooms[name] = ChatRoom.new(name, client, hidden)
 			client.chatroom = @chatrooms[name]
 			client.puts "New room #{name}"
 			puts "Room #{name} created by user #{client.username}"
@@ -141,6 +149,7 @@ class Server
 		puts "Displaying all rooms"
 		client.puts "Active rooms are:", false
 		chatrooms.each do |name, room|
+			next if room.hidden?
 			client.puts "* #{name} (#{room.users.count})", false
 		end
 		client.puts "end of list."
@@ -148,7 +157,9 @@ class Server
 
 	def help
 		puts "Displaying help"
-		["/rooms to see active rooms",
+		[ "All commans shortcuts are the /(initial letter of)",
+			"/rooms to see active rooms",
+			"/chat (user username)to private message user",
 			"/join (chatname) to join an active room",
 			"/leave to leave a chatroom",
 			"/quit to close the chat",
