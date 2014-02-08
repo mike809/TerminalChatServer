@@ -49,46 +49,49 @@ class Server
 		puts "Listening"
 		loop do
 			_input = client.gets
-			
 			if _input =~ /\/[a-zA-Z]+/
-				command, arg = self.parse_input(_input)
-
-				case command
-					when '/new',   '/n'
-						self.add_chatroom(client, arg)			
-					when '/del',   '/d'
-						chatrooms[arg].delete(client)
-						chatrooms.delete(arg)
-					when '/users', '/u'
-						self.display_users client
-					when '/help',  '/h'
-						client.puts help.join("\n")
-					when '/leave', '/l'
-						client.leave_room
-					when '/rooms', '/r'
-						self.show_chatrooms client
-					when '/quit',  '/q'
-						self.quit client
-				    break
-				  when '/chat',  '/c'
-				  	self.private_chat(client, arg)
-					when '/join',  '/j'
-						self.join_chatroom(client, arg)
-					else
-						self.send_message client, _input
-					end
+				break if self.route(_input, client)
 			else
 				self.send_message(client, _input)
 			end
 		end
+		self.quit client
+	end
+
+	def route(_input, client)
+		command, args = *self.parse_input(_input)
+
+		case command
+			when '/new',      '/n'
+				self.add_chatroom(client, *args)			
+			when '/del',      '/d'
+				chatrooms[args[0]].delete(client)
+				chatrooms.delete(args[0])
+			when '/users',    '/u'
+				self.display_users client
+			when '/help',     '/h'
+				client.puts help.join("\n")
+			when '/leave',    '/l'
+				client.leave_room
+			when '/rooms',    '/r'
+				self.show_chatrooms client
+			when '/password', '/p'
+				client.chatroom.show_password(client)
+			when '/quit',     '/q'
+				return true
+		  when '/chat',     '/c'
+		  	self.private_chat(client, args[0])
+			when '/join',     '/j'
+				self.join_chatroom(client, *args)
+			else
+				self.send_message(client, _input)
+			end
+			false
 	end
 
 	def parse_input(_input)
 		input = _input.split(' ')
-		if input.length == 2
-			return *input
-		end
-		input << ''
+		[input[0], input[1..-1]]
 	end
 
 	def send_message(client, input)
@@ -105,37 +108,38 @@ class Server
 		else
 			client.puts "You must be in a room the see their users."
 		end
-	end
+	end 
 
 	def quit(client)
 		client.leave_room if client.chatroom
 		usernames.delete(client.username)
     client.disconnect
 	end
-	
+
 	def private_chat(client, arg)
+		other_user = clients[arg]
+		# return unless other_user.accept_private_chat(client)
 		client.leave_room
-  	other_user = clients[arg]
   	self.add_chatroom(
   		client, 
   		"Private chat: #{client.username} and #{other_user.username}",
   		true
   	)
-  	self.join(other_user, client.chatroom.name)
+  	self.join_chatroom(other_user, client.chatroom.name)
 	end
 
-	def join_chatroom(client, arg)
-		if @chatrooms.include?(arg)
-			@chatrooms[arg].join(client, @chatrooms, arg)
+	def join_chatroom(client, name, password = '')
+		if @chatrooms.include?(name)
+			@chatrooms[name].join(client, @chatrooms, name, password)
 		else
-			puts "User #{client.username} tryed to join room #{arg}"
+			puts "User #{client.username} tryed to join room #{name}"
 			client.puts "Room #{arg} does not currently exist."
 		end
 	end
 
-	def add_chatroom(client, name, hidden = false)
+	def add_chatroom(client, name, hidden = false, password = '')
 		unless @chatrooms.include?(name)
-			@chatrooms[name] = ChatRoom.new(name, client, hidden)
+			@chatrooms[name] = ChatRoom.new(name, client, hidden, password)
 			client.chatroom = @chatrooms[name]
 			client.puts "New room #{name}"
 			puts "Room #{name} created by user #{client.username}"
@@ -147,10 +151,10 @@ class Server
 
 	def show_chatrooms(client)
 		puts "Displaying all rooms"
-		client.puts "Active rooms are:", false
+		client.puts "Active rooms are:"
 		chatrooms.each do |name, room|
 			next if room.hidden?
-			client.puts "* #{name} (#{room.users.count})", false
+			client.puts "* #{name} (#{room.users.count}) #{'private' if room.password != ""}"
 		end
 		client.puts "end of list."
 	end
@@ -159,12 +163,14 @@ class Server
 		puts "Displaying help"
 		[ "All commans shortcuts are the /(initial letter of)",
 			"/rooms to see active rooms",
+			"/password to see the password of the room you are in if you own the room",
 			"/chat (user username)to private message user",
-			"/join (chatname) to join an active room",
+			"/join (chatname) (password) if applies to join an active room",
 			"/leave to leave a chatroom",
 			"/quit to close the chat",
 			"/new to create new chatroom",
 			"/del (room name) to delete a room",
-		  "/users to see the users in a chatroom"]
+		  "/users to see the users in a chatroom"
+		]
 	end
 end

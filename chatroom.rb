@@ -1,16 +1,25 @@
 class ChatRoom
 
-	attr_accessor :name, :users
+	attr_accessor :name, :users, :password
 
-	def initialize(name, client, hidden = false)
+	def initialize(name, client, hidden, password)
 		@name = name
 		@owner = client
 		@users = Set.new [client]
 		@hidden = hidden
+		@password = password
 	end
 
 	def add_user(user)
 		@users.inlcude?(user.username) ? false : @users << user.username
+	end
+
+	def show_password(client)
+		if @owner == client
+			client.puts @password
+		else
+			client.puts "You can not see the password of a room you did not create."
+		end
 	end
 
 	def broadcast(msg, client)
@@ -24,7 +33,12 @@ class ChatRoom
 		@hidden
 	end
 
-	def join(client, chatrooms, arg)
+	def join(client, chatrooms, arg, password)
+			unless password == @password
+				client.puts "You can not access this chatroom without the correct password"
+				return
+			end
+
 			client.leave_room if client.chatroom
 
 			client.chatroom = chatrooms[arg]
